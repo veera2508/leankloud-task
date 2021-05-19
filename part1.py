@@ -4,6 +4,7 @@ from flask.templating import render_template
 from flask_restplus import Api, Resource, fields
 import mysql.connector
 import datetime
+from functools import wraps
 
 mydb = mysql.connector.connect(
   host="localhost",
@@ -12,11 +13,35 @@ mydb = mysql.connector.connect(
   database="todo_db"
 )
 
+authorizations =  {
+    'apikey': {
+        'type': 'apiKey',
+        'in': 'header',
+        'name': 'WRITE-API-KEY'
+    }
+}
+
 
 api_main = Flask(__name__)
 api = Api(api_main, version='1.0', title='TodoMVC API',
     description='A simple TodoMVC API',
+    authorizations= authorizations
 )
+
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'WRITE-API-KEY' in request.headers:
+            if request.headers['WRITE-API-KEY'] == 'WRITEKEY':
+                token = request.headers['WRITE-API-KEY']
+            else:
+                return {'message': 'Wrong token'}, 401
+        else:
+            return {'message': 'Write token missing'}, 401
+        return f(*args, **kwargs)
+    return decorated
+                
 
 ns = api.namespace('todos', description='TODO operations')
 
@@ -134,7 +159,8 @@ class TodoList(Resource):
         todos = DAO.getAll()
         return todos
 
-    @ns.doc('create_todo')
+    @ns.doc('create_todo', security='apikey')
+    @token_required
     @ns.response(204, 'Todo added')
     @ns.param('task', 'The task to be done')
     @ns.param('status', 'Status of the task (Not Started, In Process, Finished)',enum=["Not Started", "In Process", "Finished"])
@@ -160,8 +186,9 @@ class Todo(Resource):
         id = int(request.values.get('id'))
         return DAO.get(id)
 
-    @ns.doc('delete_todo')
+    @ns.doc('delete_todo', security='apikey')
     @ns.response(204, 'Todo deleted')
+    @token_required
     def delete(self):
         '''Delete a task given its identifier'''
         id = int(request.values.get('id'))
@@ -184,8 +211,9 @@ class Due(Resource):
 @ns.param('id', 'The id of the task')
 @ns.param('status', 'Status to be updated', enum=["Not Started", "In Process", "Finished"])
 class UpdateTask(Resource):
-    @ns.doc('status_update')
+    @ns.doc('status_update', security='apikey')
     @ns.response('204', 'Todo updated')
+    @token_required
     def post(self):
         id = int(request.values.get('id'))
         status = request.values.get('status')
